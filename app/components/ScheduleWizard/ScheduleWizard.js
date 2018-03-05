@@ -1,11 +1,12 @@
 import React, { Component } from 'react';
 import PropTypes from 'prop-types';
 import { observer, inject } from 'mobx-react';
-import TimeSettings from '../ScheduleWizard/TimeSettings';
-import InfoSettings from '../ScheduleWizard/InfoSettings';
-import BountySettings from '../ScheduleWizard/BountySettings';
-import ConfirmSettings from '../ScheduleWizard/ConfirmSettings';
-import PoweredByEAC from './PoweredByEAC';
+import TimeSettings from './TimeSettings';
+import InfoSettings from './InfoSettings';
+import BountySettings from './BountySettings';
+import ConfirmSettings from './ConfirmSettings';
+import PoweredByEAC from '../Common/PoweredByEAC';
+import { showNotification } from '../../services/notification';
 
 @inject('web3Service')
 @inject('scheduleStore')
@@ -102,8 +103,48 @@ class ScheduleWizard extends Component {
     const { scheduleStore } = this.props;
     return scheduleStore.customWindow && this._validations.TimeSettings.TimeComponent.customWindow;
   }
+  get TimeComponentValidations() {
+    const { scheduleStore } = this.props;
+    const _timeZone = Boolean(scheduleStore.timeZone) && this._validations.TimeSettings.TimeComponent.timeZone;
+    const _transactionDate = Boolean(scheduleStore.transactionDate) && this._validations.TimeSettings.TimeComponent.transactionDate;
+    const _transactionTime = Boolean(scheduleStore.transactionTime) && this._validations.TimeSettings.TimeComponent.transactionTime;
+    const _executionWindow = (Boolean(scheduleStore.customWindow) && this._validations.TimeSettings.TimeComponent.customWindow) || (Boolean(scheduleStore.executionWindow) && this._validations.TimeSettings.TimeComponent.executionWindow);
+    return _timeZone && _transactionDate && _transactionTime && _executionWindow;
+  }
+  get blockComponentValidations() {
+    const { scheduleStore } = this.props;
+    const _blockNumber = Boolean(scheduleStore.blockNumber) && this._validations.TimeSettings.BlockComponent.blockNumber;
+    const _blockSize = Boolean(scheduleStore.blockSize) && this._validations.TimeSettings.BlockComponent.blockSize;
+    return _blockNumber && _blockSize;
+  }
+  get bountySettingsValidation() {
+    const { scheduleStore } = this.props;
+    const _timeBounty = Boolean(scheduleStore.timeBounty) && this._validations.BountySettings.timeBounty;
+    const _deposit = !scheduleStore.requireDeposit || (Boolean(scheduleStore.deposit) && this._validations.BountySettings.deposit);
+    return _timeBounty && _deposit;
+  }
+
+  get infoSettingsValidations() {
+    const { scheduleStore } = this.props;
+    const _addr = Boolean(scheduleStore.toAddress) && this._validations.InfoSettings.toAddress;
+    const _gasAmount = Boolean(scheduleStore.gasAmount) && this._validations.InfoSettings.gasAmount;
+    const _amountToSend = Boolean(scheduleStore.amountToSend) && this._validations.InfoSettings.amountToSend;
+    const _gasPrice = Boolean(scheduleStore.gasPrice) && this._validations.InfoSettings.gasPrice;
+    const _yourData = !scheduleStore.useData || (Boolean(scheduleStore.yourData) && this._validations.yourData);
+    return _addr && _gasAmount && _amountToSend && _gasPrice && _yourData;
+  }
+
+  get scheduleDisabled() {
+    const { scheduleStore } = this.props;
+    const validations = !this.bountySettingsValidation || !this.props.isWeb3Usable || !this.infoSettingsValidations || !((scheduleStore.isUsingTime && this.TimeComponentValidations) || this.blockComponentValidations);
+    return validations;
+  }
 
   async scheduleTransaction() {
+    this.scheduleBtn.innerHTML = 'Scheduling...';
+    var originalBodyCss = document.body.className;
+    document.body.className += ' fade-me';
+
     const { scheduleStore, transactionStore, web3Service: { web3 } , history } = this.props;
     let executionTime, executionWindow;
 
@@ -124,22 +165,33 @@ class ScheduleWizard extends Component {
     timeBounty = web3.toWei(timeBounty, 'ether');
     deposit = web3.toWei(deposit, 'ether');
 
-    const scheduled = await transactionStore.schedule(toAddress,
-                                                    yourData,
-                                                    gasAmount,
-                                                    amountToSend,
-                                                    executionWindow,
-                                                    executionTime,
-                                                    gasPrice,
-                                                    fee,
-                                                    timeBounty,
-                                                    deposit,
-                                                    false, //do not wait for mining to return values
-                                                    isUsingTime
-                                                  );
-    if (scheduled) {
+    try {
+      const scheduled = await transactionStore.schedule(
+        toAddress,
+        yourData,
+        gasAmount,
+        amountToSend,
+        executionWindow,
+        executionTime,
+        gasPrice,
+        fee,
+        timeBounty,
+        deposit,
+        false, //do not wait for mining to return values
+        isUsingTime
+      );
+
+      if (scheduled) {
+        scheduleStore.reset();
         history.push('/awaiting/scheduler/' + scheduled.transactionHash);
+        document.body.className = originalBodyCss;
       }
+    } catch (error) {
+      showNotification('Transaction cancelled by the user.', 'danger', 4000);
+    }
+
+    this.scheduleBtn.innerHTML = 'Schedule';
+    document.body.className = originalBodyCss;
   }
 
   componentDidMount() {
@@ -198,11 +250,8 @@ class ScheduleWizard extends Component {
           <TimeSettings {..._validationProps}/>
           <InfoSettings {..._validationProps}/>
           <BountySettings {..._validationProps}/>
-          <ConfirmSettings {...{ isWeb3Usable: this.props.isWeb3Usable, isCustomWindow: this.isCustomWindow }}/>
+          <ConfirmSettings infoTabValidator={this.infoSettingsValidations} timeTabValidator={this.TimeComponentValidations} blockTabValidator={this.blockComponentValidations} bountyTabValidator={this.bountySettingsValidation} {...{ isWeb3Usable: this.props.isWeb3Usable, isCustomWindow: this.isCustomWindow }}/>
 
-          <div className="d-sm-block d-md-none">
-            <hr/>
-          </div>
           <div className="row">
             <div className="d-none d-md-block col-md-2">
               <PoweredByEAC className="footer-buttons"/>
@@ -212,22 +261,26 @@ class ScheduleWizard extends Component {
               <ul className="pager wizard no-style">
                 <li className="next">
                   <button className="btn btn-primary btn-cons pull-right" onClick={ this.initiateScrollbar } type="button">
-                    <span>Next</span>
+                    Next
                   </button>
                 </li>
                 <li className="next finish" style={{ display: 'none' }}>
-                  <button className="btn btn-primary btn-cons pull-right" type="button" onClick={this.scheduleTransaction} disabled={!this.props.isWeb3Usable}>
-                    <span>Schedule</span>
+                  <button className="btn btn-primary btn-cons pull-right"
+                    type="button"
+                    ref={(el) => this.scheduleBtn = el}
+                    onClick={this.scheduleTransaction}
+                    disabled={this.scheduleDisabled}>
+                    Schedule
                   </button>
                 </li>
                 <li className="previous first" style={{ display: 'none' }}>
                   <button className="btn btn-white btn-cons pull-right" onClick={ this.initiateScrollbar } type="button">
-                    <span>First</span>
+                    First
                   </button>
                   </li>
                 <li className="previous">
                   <button className="btn btn-white btn-cons pull-right" onClick={ this.initiateScrollbar } type="button">
-                    <span>Previous</span>
+                    Previous
                   </button>
                 </li>
               </ul>

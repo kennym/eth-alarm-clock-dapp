@@ -11,20 +11,24 @@ class ConfirmSettings extends Component {
 
   constructor(props){
     super(props);
+    this.infoSettingsValidations = this.infoSettingsValidations.bind(this);
+    this.bountySettingsValidations = this.bountySettingsValidations.bind(this);
+    this.timeSettingsValidations = this.timeSettingsValidations.bind(this);
+    this.blockComponentValidations = this.blockComponentValidations.bind(this);
   }
 
   totalCost() {
     const { scheduleStore, eacService,web3Service: { web3 } } = this.props;
-    let { gasAmount, amountToSend, gasPrice, fee, timeBounty, deposit } = scheduleStore;
+    let { gasAmount, amountToSend, gasPrice, fee, timeBounty } = scheduleStore;
 
     amountToSend = web3.toWei(amountToSend, 'ether');
     gasPrice = web3.toWei(gasPrice, 'gwei');
     fee = web3.toWei(fee, 'ether');
-    deposit = web3.toWei(deposit,'ether');
+    timeBounty = web3.toWei(timeBounty,'ether');
 
-    const endowment = eacService.calcEndowment(gasAmount, amountToSend, gasPrice, fee, deposit);
+    const endowment = eacService.calcEndowment(gasAmount, amountToSend, gasPrice, fee, timeBounty);
 
-    return Number(web3.fromWei(endowment, 'ether'))+Number(timeBounty); // Only for display purposes
+    return Number(web3.fromWei(endowment, 'ether')); // Only for display purposes
   }
 
   get executionWindow() {
@@ -47,6 +51,33 @@ class ConfirmSettings extends Component {
     return !this.props.isWeb3Usable ? <Alert {...{ msg: 'You need Metamask installed and accounts Unlocked to continue' }} /> : null;
   }
 
+  infoSettingsValidations() {
+    return !this.props.infoTabValidator ? 'info' : null;
+  }
+
+  bountySettingsValidations() {
+    return !this.props.bountyTabValidator ? 'bounty' : null;
+  }
+
+  timeSettingsValidations() {
+    const { scheduleStore } = this.props;
+    return scheduleStore.isUsingTime && !this.props.timeTabValidator ? 'time' : null;
+  }
+
+  blockComponentValidations() {
+    const { scheduleStore } = this.props;
+    return !scheduleStore.isUsingTime && !this.props.blockTabValidator ? 'block' : null;
+  }
+
+  tabValidations() {
+    const errors = [];
+    this.infoSettingsValidations() ? errors.push(this.infoSettingsValidations()) : null;
+    this.bountySettingsValidations() ? errors.push(this.bountySettingsValidations()) : null;
+    this.timeSettingsValidations() ? errors.push(this.timeSettingsValidations()) : null;
+    this.blockComponentValidations() ? errors.push(this.blockComponentValidations()) : null;
+    return errors.length > 0 ? <Alert {...{ msg: 'errors found in tabs: ' + errors.join(',') }}  /> : null;
+  }
+
   render() {
     const { scheduleStore } = this.props;
     const emptyFieldSign = '-';
@@ -54,7 +85,7 @@ class ConfirmSettings extends Component {
       <div id="confirmSettings" className="tab-pane">
         <h2>Summary</h2>
         {this.web3Error()}
-
+        {this.tabValidations()}
         <div className="row">
 
           <div className="col-sm-6 col-md-6">
@@ -124,7 +155,7 @@ class ConfirmSettings extends Component {
           </div>
 
         </div>
-        <h3 className="text-right m-t-20">Total cost: <strong>{ this.totalCost() } ETH</strong></h3>
+        <h3 className="text-right m-t-20">Total amount: <strong>{ this.totalCost() } ETH</strong></h3>
       </div>
         );
       }
@@ -135,7 +166,12 @@ ConfirmSettings.propTypes = {
   web3Service: PropTypes.any,
   eacService: PropTypes.any,
   isWeb3Usable: PropTypes.any,
-  isCustomWindow: PropTypes.any
+  isCustomWindow: PropTypes.any,
+  TimeComponentValidations: PropTypes.any,
+  bountyTabValidator: PropTypes.any,
+  infoTabValidator: PropTypes.any,
+  timeTabValidator: PropTypes.any,
+  blockTabValidator: PropTypes.any
 };
 
 export default ConfirmSettings;
